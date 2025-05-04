@@ -1,0 +1,470 @@
+#include <iostream>
+#include <vector>
+#include <omp.h>
+
+using namespace std;
+
+// Node structure representing a tree node
+struct TreeNode
+{
+    int data;
+    vector<TreeNode *> children;
+
+    TreeNode(int val) : data(val) {}
+};
+
+// Tree class representing the tree structure
+class Tree
+{
+    TreeNode *root;
+
+public:
+    Tree(int val)
+    {
+        root = new TreeNode(val);
+    }
+
+    // Add a child to a parent node
+    void addChild(TreeNode *parent, int val)
+    {
+        TreeNode *newNode = new TreeNode(val);
+        parent->children.push_back(newNode);
+    }
+
+    // Method to get the root node
+    TreeNode *getRoot()
+    {
+        return root;
+    }
+
+    // Parallel Depth-First Search using tasks
+    void parallelDFS(TreeNode *node)
+    {
+        if (!node)
+            return;
+
+#pragma omp critical
+        cout << node->data << " ";
+
+#pragma omp parallel
+        {
+#pragma omp single
+            {
+                for (TreeNode *child : node->children)
+                {
+#pragma omp task
+                    parallelDFS(child);
+                }
+            }
+        }
+    }
+
+    // Parallel Breadth-First Search using level-wise processing
+    void parallelBFS()
+    {
+        vector<TreeNode *> currentLevel;
+        currentLevel.push_back(root);
+
+        while (!currentLevel.empty())
+        {
+            vector<TreeNode *> nextLevel;
+
+#pragma omp parallel for
+            for (int i = 0; i < currentLevel.size(); ++i)
+            {
+                TreeNode *current = currentLevel[i];
+
+#pragma omp critical
+                cout << current->data << " ";
+
+#pragma omp critical
+                nextLevel.insert(nextLevel.end(),
+                                 current->children.begin(),
+                                 current->children.end());
+            }
+
+            currentLevel = nextLevel;
+        }
+    }
+};
+
+int main()
+{
+    // Create a tree
+    Tree tree(1);
+    TreeNode *root = tree.getRoot();
+    tree.addChild(root, 2);
+    tree.addChild(root, 3);
+    tree.addChild(root, 4);
+
+    TreeNode *node2 = root->children[0];
+    tree.addChild(node2, 5);
+    tree.addChild(node2, 6);
+
+    TreeNode *node4 = root->children[2];
+    tree.addChild(node4, 7);
+    tree.addChild(node4, 8);
+
+    /*
+               1
+             / | \
+            2  3  4
+           / \    / \
+          5   6  7   8
+    */
+
+    cout << "Depth-First Search (DFS): ";
+    tree.parallelDFS(root);
+    cout << endl;
+
+    cout << "Breadth-First Search (BFS): ";
+    tree.parallelBFS();
+    cout << endl;
+
+    return 0;
+}
+
+
+Let's go through this C++ code line by line. This code demonstrates parallel traversal of a tree using OpenMP for Depth-First Search (DFS) and Breadth-First Search (BFS).
+________________________________________
+HEADER INCLUDES
+#include <iostream>
+Includes the input-output stream library, allowing the use of cout for printing.
+#include <vector>
+Includes the vector library for using dynamic arrays (std::vector).
+#include <omp.h>
+Includes OpenMP for enabling parallel programming (multi-threading support).
+________________________________________
+NAMESPACE
+using namespace std;
+Brings the std namespace into the global scope to avoid prefixing std:: every time.
+________________________________________
+TREE NODE STRUCTURE
+struct TreeNode
+{
+    int data;
+    vector<TreeNode *> children;
+
+    TreeNode(int val) : data(val) {}
+};
+•	struct TreeNode: Defines a node of the tree.
+•	int data: Stores the value in the node.
+•	vector<TreeNode *> children: A list of pointers to the child nodes.
+•	TreeNode(int val): Constructor initializes the node's data.
+________________________________________
+TREE CLASS
+class Tree
+{
+    TreeNode *root;
+Defines the Tree class and a private member root, which points to the root node of the tree.
+________________________________________
+CONSTRUCTOR
+public:
+    Tree(int val)
+    {
+        root = new TreeNode(val);
+    }
+Creates a tree with a root node initialized to val.
+________________________________________
+ADD CHILD METHOD
+    void addChild(TreeNode *parent, int val)
+    {
+        TreeNode *newNode = new TreeNode(val);
+        parent->children.push_back(newNode);
+    }
+Adds a child with value val to the parent node.
+________________________________________
+GET ROOT METHOD
+    TreeNode *getRoot()
+    {
+        return root;
+    }
+Returns a pointer to the root node.
+________________________________________
+PARALLEL DEPTH-FIRST SEARCH
+    void parallelDFS(TreeNode *node)
+    {
+        if (!node)
+            return;
+•	Base case: if node is nullptr, return.
+#pragma omp critical
+        cout << node->data << " ";
+•	Print current node’s data. #pragma omp critical ensures only one thread prints at a time (avoids race conditions on cout).
+#pragma omp parallel
+        {
+#pragma omp single
+            {
+                for (TreeNode *child : node->children)
+                {
+#pragma omp task
+                    parallelDFS(child);
+                }
+            }
+        }
+•	A parallel region begins.
+•	#pragma omp single: Only one thread starts creating tasks.
+•	For each child, a new task is created to recursively call parallelDFS.
+________________________________________
+PARALLEL BREADTH-FIRST SEARCH
+    void parallelBFS()
+    {
+        vector<TreeNode *> currentLevel;
+        currentLevel.push_back(root);
+Starts with the root node in the currentLevel queue.
+        while (!currentLevel.empty())
+        {
+            vector<TreeNode *> nextLevel;
+Runs level by level until there are no more nodes to process.
+#pragma omp parallel for
+            for (int i = 0; i < currentLevel.size(); ++i)
+            {
+                TreeNode *current = currentLevel[i];
+Processes each node in the current level in parallel.
+#pragma omp critical
+                cout << current->data << " ";
+Prints the node value (safely using a critical section).
+#pragma omp critical
+                nextLevel.insert(nextLevel.end(),
+                                 current->children.begin(),
+                                 current->children.end());
+Appends all children of the current node to the nextLevel.
+            }
+
+            currentLevel = nextLevel;
+        }
+Proceeds to the next level.
+________________________________________
+MAIN FUNCTION
+int main()
+{
+    Tree tree(1);
+    TreeNode *root = tree.getRoot();
+Creates a tree with root value 1.
+    tree.addChild(root, 2);
+    tree.addChild(root, 3);
+    tree.addChild(root, 4);
+Adds children 2, 3, and 4 to root.
+    TreeNode *node2 = root->children[0];
+    tree.addChild(node2, 5);
+    tree.addChild(node2, 6);
+Adds children 5 and 6 to node 2.
+    TreeNode *node4 = root->children[2];
+    tree.addChild(node4, 7);
+    tree.addChild(node4, 8);
+Adds children 7 and 8 to node 4.
+Resulting Tree Structure:
+       1
+     / | \
+    2  3  4
+   / \    / \
+  5   6  7   8
+________________________________________
+RUNNING DFS & BFS
+    cout << "Depth-First Search (DFS): ";
+    tree.parallelDFS(root);
+    cout << endl;
+
+    cout << "Breadth-First Search (BFS): ";
+    tree.parallelBFS();
+    cout << endl;
+Calls and prints results of parallel DFS and BFS.
+________________________________________
+RETURN
+    return 0;
+}
+Ends the main() function.
+________________________________________
+Let me know if you'd like a diagram of the tree structure or a demo of how OpenMP parallelism behaves with this code.
+
+
+
+
+
+
+
+
+#include <iostream>
+#include <vector>
+#include <unordered_map>
+#include <omp.h>
+
+using namespace std;
+
+// Node structure
+struct TreeNode {
+    int data;
+    vector<TreeNode *> children;
+    TreeNode(int val) : data(val) {}
+};
+
+class Tree {
+    TreeNode *root;
+
+public:
+    Tree(int val) {
+        root = new TreeNode(val);
+    }
+
+    TreeNode *getRoot() {
+        return root;
+    }
+
+    void setRoot(TreeNode *node) {
+        root = node;
+    }
+
+    // Parallel DFS
+    void parallelDFS(TreeNode *node) {
+        if (!node)
+            return;
+
+        #pragma omp critical
+        cout << node->data << " ";
+
+        #pragma omp parallel
+        {
+            #pragma omp single
+            {
+                for (TreeNode *child : node->children) {
+                    #pragma omp task
+                    parallelDFS(child);
+                }
+            }
+        }
+    }
+
+    // Parallel BFS
+    void parallelBFS() {
+        vector<TreeNode *> currentLevel = { root };
+
+        while (!currentLevel.empty()) {
+            vector<TreeNode *> nextLevel;
+
+            #pragma omp parallel for
+            for (int i = 0; i < currentLevel.size(); ++i) {
+                TreeNode *current = currentLevel[i];
+
+                #pragma omp critical
+                cout << current->data << " ";
+
+                #pragma omp critical
+                nextLevel.insert(nextLevel.end(),
+                                 current->children.begin(),
+                                 current->children.end());
+            }
+
+            currentLevel = nextLevel;
+        }
+    }
+};
+
+int main() {
+    int n;
+    cout << "Enter number of nodes: ";
+    cin >> n;
+
+    if (n <= 0) {
+        cout << "Invalid number of nodes.\n";
+        return 1;
+    }
+
+    int root_val;
+    cout << "Enter root value: ";
+    cin >> root_val;
+
+    unordered_map<int, TreeNode *> nodeMap;
+    TreeNode *root = new TreeNode(root_val);
+    nodeMap[root_val] = root;
+    Tree tree(root_val);
+    tree.setRoot(root);
+
+    cout << "Enter parent-child pairs (child parent):\n";
+    for (int i = 0; i < n - 1; ++i) {
+        int child_val, parent_val;
+        cin >> child_val >> parent_val;
+
+        // Create parent node if not exists
+        if (nodeMap.find(parent_val) == nodeMap.end()) {
+            nodeMap[parent_val] = new TreeNode(parent_val);
+        }
+
+        // Create child node if not exists
+        if (nodeMap.find(child_val) == nodeMap.end()) {
+            nodeMap[child_val] = new TreeNode(child_val);
+        }
+
+        // Add child to parent
+        nodeMap[parent_val]->children.push_back(nodeMap[child_val]);
+    }
+
+    cout << "\nDepth-First Search (DFS): ";
+    tree.parallelDFS(root);
+    cout << endl;
+
+    cout << "Breadth-First Search (BFS): ";
+    tree.parallelBFS();
+    cout << endl;
+
+    return 0;
+}
+
+
+input :- 
+
+Enter number of nodes: 8
+Enter root value: 1
+Enter parent-child pairs (child parent):
+2 1
+3 1
+4 1
+5 2
+6 2
+7 4
+8 4
+
+
+1. Tree Data Structure
+A tree is a hierarchical data structure made up of nodes.
+
+Root: Topmost node.
+
+Parent-Child: Directed connection between two nodes.
+
+Leaf: A node with no children.
+
+General Trees allow any number of children, unlike binary trees (max 2).
+
+2. DFS (Depth-First Search)
+Traversal goes deep before wide:
+
+Start from the root.
+
+Visit children recursively.
+
+✅ This code parallelizes DFS by creating a new task for each child:
+
+cpp
+Copy
+Edit
+#pragma omp task
+parallelDFS(child);
+OpenMP Concepts:
+
+#pragma omp parallel starts parallel region.
+
+#pragma omp single ensures only one thread executes that block initially.
+
+#pragma omp task spawns new tasks (potentially on different threads).
+
+DFS order (non-deterministic due to parallelism): Might be 1 2 5 6 3 4 7 8 or any variant, depending on thread execution order.
+
+3. BFS (Breadth-First Search)
+Traversal goes level by level:
+
+Visit all nodes at a given depth before going deeper.
+
+✅ This code uses two vectors:
+
+currentLevel holds nodes at the current depth.
+
+nextLevel gathers their children.
